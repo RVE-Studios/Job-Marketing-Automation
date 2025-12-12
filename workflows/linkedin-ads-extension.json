@@ -1,0 +1,449 @@
+{
+  "name": "LinkedIn Ads - Campaign Creation Extension",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition1",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "Done",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "condition2",
+              "leftValue": "={{ $json.autoPublish }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "conditional-split",
+      "name": "Check Auto Publish"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Prepares campaign data for LinkedIn Ads API\n * Extracts headlines, copy, and targeting from generated content\n */\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  try {\n    const recordId = item.json.recordId;\n    const jobTitle = item.json.jobTitle || 'Unknown Position';\n    const location = item.json.location || 'Nederland';\n    const budget = parseFloat(item.json.dailyBudget) || 50.00; // Default €50/day\n    \n    // Parse targeting data\n    let targeting = {};\n    try {\n      targeting = typeof item.json.targeting === 'string' \n        ? JSON.parse(item.json.targeting) \n        : item.json.targeting;\n    } catch (e) {\n      console.error('Failed to parse targeting:', e);\n      targeting = { linkedin_titles: [], linkedin_skills: [], geo: location };\n    }\n    \n    // Prepare campaign data\n    const campaignData = {\n      recordId: recordId,\n      campaignName: `${jobTitle} - ${location} - ${new Date().toISOString().split('T')[0]}`,\n      dailyBudget: budget,\n      currency: 'EUR',\n      \n      // Headlines and copy (will be used in creatives)\n      headlines: [\n        item.json.headline1 || '',\n        item.json.headline2 || '',\n        item.json.headline3 || ''\n      ].filter(h => h.length > 0),\n      \n      adCopy: [\n        item.json.adCopy1 || '',\n        item.json.adCopy2 || ''\n      ].filter(c => c.length > 0),\n      \n      // Targeting\n      targetingCriteria: {\n        jobTitles: targeting.linkedin_titles || [],\n        skills: targeting.linkedin_skills || [],\n        geo: targeting.geo || location\n      }\n    };\n    \n    results.push({ json: campaignData });\n    \n  } catch (error) {\n    console.error('Error preparing campaign data:', error);\n    results.push({\n      json: {\n        error: error.message,\n        recordId: item.json.recordId\n      }\n    });\n  }\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        -100
+      ],
+      "id": "prepare-campaign-data",
+      "name": "Prepare Campaign Data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.linkedin.com/rest/adAccounts/{{ $env.LINKEDIN_AD_ACCOUNT_ID }}/adCampaignGroups",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "linkedInOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "LinkedIn-Version",
+              "value": "202407"
+            },
+            {
+              "name": "X-RestLi-Protocol-Version",
+              "value": "2.0.0"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"account\": \"urn:li:sponsoredAccount:{{ $env.LINKEDIN_AD_ACCOUNT_ID }}\",\n  \"name\": \"{{ $json.campaignName }}\",\n  \"status\": \"PAUSED\",\n  \"type\": \"SPONSORED_UPDATES\",\n  \"runSchedule\": {\n    \"start\": {{ Math.floor(Date.now() / 1000) }},\n    \"end\": {{ Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60) }}\n  },\n  \"totalBudget\": {\n    \"amount\": \"{{ $json.dailyBudget * 30 }}\",\n    \"currencyCode\": \"{{ $json.currency }}\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        440,
+        -100
+      ],
+      "id": "create-campaign-group",
+      "name": "LinkedIn: Create Campaign Group",
+      "notes": "Creates a campaign group (container for campaigns)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Extracts campaign group ID from LinkedIn response\n */\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const response = item.json;\n  const campaignGroupId = response.id || response.value?.id;\n  \n  if (!campaignGroupId) {\n    throw new Error('No campaign group ID in response');\n  }\n  \n  results.push({\n    json: {\n      ...item.json,\n      campaignGroupId: campaignGroupId,\n      campaignGroupUrn: `urn:li:sponsoredCampaignGroup:${campaignGroupId}`\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        -100
+      ],
+      "id": "extract-campaign-group-id",
+      "name": "Extract Campaign Group ID"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.linkedin.com/rest/adAccounts/{{ $env.LINKEDIN_AD_ACCOUNT_ID }}/adCampaigns",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "linkedInOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "LinkedIn-Version",
+              "value": "202407"
+            },
+            {
+              "name": "X-RestLi-Protocol-Version",
+              "value": "2.0.0"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"account\": \"urn:li:sponsoredAccount:{{ $env.LINKEDIN_AD_ACCOUNT_ID }}\",\n  \"campaignGroup\": \"{{ $json.campaignGroupUrn }}\",\n  \"name\": \"{{ $json.campaignName }} - Main Campaign\",\n  \"type\": \"SPONSORED_UPDATES\",\n  \"costType\": \"CPM\",\n  \"dailyBudget\": {\n    \"amount\": \"{{ $json.dailyBudget }}\",\n    \"currencyCode\": \"{{ $json.currency }}\"\n  },\n  \"status\": \"PAUSED\",\n  \"targetingCriteria\": {\n    \"include\": {\n      \"and\": [\n        {\n          \"or\": {\n            \"urn:li:adTargetingFacet:titles\": {{ JSON.stringify($json.targetingCriteria.jobTitles) }}\n          }\n        },\n        {\n          \"or\": {\n            \"urn:li:adTargetingFacet:skills\": {{ JSON.stringify($json.targetingCriteria.skills) }}\n          }\n        },\n        {\n          \"or\": {\n            \"urn:li:adTargetingFacet:locations\": [\"{{ $json.targetingCriteria.geo }}\"]\n          }\n        }\n      ]\n    }\n  },\n  \"locale\": {\n    \"country\": \"NL\",\n    \"language\": \"nl_NL\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        880,
+        -100
+      ],
+      "id": "create-campaign",
+      "name": "LinkedIn: Create Campaign",
+      "notes": "Creates actual campaign with targeting",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Extracts campaign ID and prepares for creative creation\n */\n\nconst items = $input.all();\nconst campaignData = $('Prepare Campaign Data').all();\nconst results = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const response = items[i].json;\n  const originalData = campaignData[i].json;\n  \n  const campaignId = response.id || response.value?.id;\n  \n  if (!campaignId) {\n    throw new Error('No campaign ID in response');\n  }\n  \n  // Create entry for each headline/copy combination\n  const headlines = originalData.headlines || [];\n  const adCopies = originalData.adCopy || [];\n  \n  // Generate creative variants: each headline with first ad copy\n  headlines.forEach((headline, index) => {\n    results.push({\n      json: {\n        recordId: originalData.recordId,\n        campaignId: campaignId,\n        campaignUrn: `urn:li:sponsoredCampaign:${campaignId}`,\n        headline: headline,\n        adCopy: adCopies[0] || adCopies[1] || '',\n        variantNumber: index + 1\n      }\n    });\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        -100
+      ],
+      "id": "prepare-creatives",
+      "name": "Prepare Creatives"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.linkedin.com/rest/adCreatives",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "linkedInOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "LinkedIn-Version",
+              "value": "202407"
+            },
+            {
+              "name": "X-RestLi-Protocol-Version",
+              "value": "2.0.0"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"campaign\": \"{{ $json.campaignUrn }}\",\n  \"type\": \"SPONSORED_STATUS_UPDATE\",\n  \"status\": \"PAUSED\",\n  \"variables\": {\n    \"data\": {\n      \"com.linkedin.ads.SponsoredStatusUpdateCreativeVariables\": {\n        \"share\": {\n          \"author\": \"urn:li:organization:{{ $env.LINKEDIN_ORGANIZATION_ID }}\",\n          \"commentary\": \"{{ $json.adCopy }}\",\n          \"content\": {\n            \"title\": \"{{ $json.headline }}\",\n            \"description\": \"{{ $json.adCopy.substring(0, 100) }}...\",\n            \"landingPage\": \"{{ $env.CAREER_PAGE_URL || 'https://company.com/careers' }}\"\n          }\n        }\n      }\n    }\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1320,
+        -100
+      ],
+      "id": "create-creative",
+      "name": "LinkedIn: Create Ad Creative",
+      "notes": "Creates ad creative for each headline variant",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Aggregates all creative IDs for the record\n */\n\nconst items = $input.all();\nconst grouped = {};\n\n// Group by recordId\nitems.forEach(item => {\n  const recordId = item.json.recordId;\n  const creativeId = item.json.id || item.json.value?.id;\n  \n  if (!grouped[recordId]) {\n    grouped[recordId] = {\n      recordId: recordId,\n      campaignId: item.json.campaignId,\n      creativeIds: []\n    };\n  }\n  \n  if (creativeId) {\n    grouped[recordId].creativeIds.push(creativeId);\n  }\n});\n\n// Convert to array\nconst results = Object.values(grouped).map(data => ({\n  json: {\n    recordId: data.recordId,\n    linkedinCampaignId: data.campaignId,\n    linkedinCreativeIds: JSON.stringify(data.creativeIds),\n    campaignStatus: 'Draft',\n    campaignCreatedAt: new Date().toISOString()\n  }\n}));\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        -100
+      ],
+      "id": "aggregate-campaign-data",
+      "name": "Aggregate Campaign Data"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRhnA2VngPTd6JO",
+          "mode": "list",
+          "cachedResultName": "Recruitment Marketing"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblN1K0pCU7UPiFfs",
+          "mode": "list",
+          "cachedResultName": "Vacatures"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.recordId }}",
+            "LinkedIn Campaign ID": "={{ $json.linkedinCampaignId }}",
+            "LinkedIn Creative IDs": "={{ $json.linkedinCreativeIds }}",
+            "Campaign Status": "={{ $json.campaignStatus }}",
+            "Campaign Created At": "={{ $json.campaignCreatedAt }}"
+          },
+          "matchingColumns": ["id"]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1760,
+        -100
+      ],
+      "id": "update-airtable-campaigns",
+      "name": "Update Airtable - Campaign Data",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "azZisgcDDgVUepXK",
+          "name": "Airtable-Recruitment Vacatures"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Error handler for LinkedIn Ads API failures\n * Updates Airtable with error details\n */\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const errorData = {\n    recordId: item.json.recordId || 'unknown',\n    campaignStatus: 'API Error',\n    errorLog: `LinkedIn Ads API Error: ${item.json.error || 'Unknown error'}`,\n    campaignCreatedAt: new Date().toISOString()\n  };\n  \n  results.push({ json: errorData });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        100
+      ],
+      "id": "linkedin-error-handler",
+      "name": "LinkedIn Error Handler"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRhnA2VngPTd6JO",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblN1K0pCU7UPiFfs",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.recordId }}",
+            "Campaign Status": "={{ $json.campaignStatus }}",
+            "Error Log": "={{ $json.errorLog }}",
+            "Campaign Created At": "={{ $json.campaignCreatedAt }}"
+          },
+          "matchingColumns": ["id"]
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1760,
+        100
+      ],
+      "id": "update-airtable-error",
+      "name": "Update Airtable - Error",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "azZisgcDDgVUepXK",
+          "name": "Airtable-Recruitment Vacatures"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Check Auto Publish": {
+      "main": [
+        [
+          {
+            "node": "Prepare Campaign Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Campaign Data": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn: Create Campaign Group",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn: Create Campaign Group": {
+      "main": [
+        [
+          {
+            "node": "Extract Campaign Group ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LinkedIn Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Campaign Group ID": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn: Create Campaign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn: Create Campaign": {
+      "main": [
+        [
+          {
+            "node": "Prepare Creatives",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LinkedIn Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Creatives": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn: Create Ad Creative",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn: Create Ad Creative": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Campaign Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LinkedIn Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Campaign Data": {
+      "main": [
+        [
+          {
+            "node": "Update Airtable - Campaign Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn Error Handler": {
+      "main": [
+        [
+          {
+            "node": "Update Airtable - Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-12-12T00:00:00.000Z",
+  "versionId": "linkedin-ads-v1"
+}

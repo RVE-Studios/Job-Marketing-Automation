@@ -1,0 +1,112 @@
+{
+  "test_jobs": [
+    {
+      "name": "Test Case 1: Senior Developer - Complete Data",
+      "fields": {
+        "Vacaturetitel": "Senior Python Developer",
+        "Functietitel EN": "Senior Python Developer",
+        "Omschrijving": "We zijn op zoek naar een ervaren Python developer die ons team komt versterken. Je werkt aan onze core platform dat dagelijks door 500.000+ gebruikers wordt gebruikt. Je bent verantwoordelijk voor het ontwerpen en implementeren van schaalbare backend services, het optimaliseren van database queries, en het mentoren van junior developers. We werken met moderne technologieën zoals FastAPI, PostgreSQL, Redis, en Docker. Ons platform verwerkt miljoenen requests per dag en je hebt directe impact op de user experience van onze klanten.",
+        "Requirements": "5+ jaar ervaring met Python, Django of FastAPI. Sterke kennis van SQL databases (PostgreSQL preferred). Ervaring met Redis/caching strategies. Kennis van Docker en Kubernetes. Ervaring met CI/CD pipelines. Goede communicatie skills in Nederlands en Engels.",
+        "Locatie": "Amsterdam",
+        "Senioriteit": "Senior",
+        "Salaris": "€70.000 - €90.000",
+        "USPs": "Remote-first cultuur (3 dagen thuis, 2 dagen op kantoor), 30 vakantiedagen, persoonlijk ontwikkelbudget van €2000 per jaar, moderne tech stack, flat hierarchy, impact-driven team van 25 developers, gratis lunch op kantoor, pensioenregeling met 8% werkgeversbijdrage."
+      },
+      "expected_output": {
+        "headline_length_max": 80,
+        "ad_copy_length_max": 350,
+        "should_mention": ["Python", "500.000+ gebruikers", "schaalbare"],
+        "should_not_mention": ["geweldige kans", "join ons team"]
+      }
+    },
+    {
+      "name": "Test Case 2: Junior Frontend - Minimal Data",
+      "fields": {
+        "Vacaturetitel": "Junior React Developer",
+        "Omschrijving": "Ben jij net afgestudeerd en wil je aan de slag als React developer? Wij bieden een leuke leerwerkomgeving waar je begeleiding krijgt van senior developers.",
+        "Requirements": "Afgeronde HBO/WO opleiding. Kennis van JavaScript en React. Enthousiasme om te leren.",
+        "Locatie": "Utrecht",
+        "Senioriteit": "Junior",
+        "Salaris": "€35.000 - €45.000",
+        "USPs": ""
+      },
+      "expected_output": {
+        "headline_length_max": 80,
+        "should_pass_validation": true,
+        "should_mention": ["leren", "begeleiding"],
+        "tone": "energiek"
+      }
+    },
+    {
+      "name": "Test Case 3: Invalid - Missing Description",
+      "fields": {
+        "Vacaturetitel": "Data Engineer",
+        "Omschrijving": "",
+        "Requirements": "Python, SQL, Airflow",
+        "Locatie": "Rotterdam",
+        "Senioriteit": "Medior"
+      },
+      "expected_output": {
+        "should_fail_validation": true,
+        "error_message": "Omschrijving is verplicht"
+      }
+    },
+    {
+      "name": "Test Case 4: Invalid - Description Too Short",
+      "fields": {
+        "Vacaturetitel": "DevOps Engineer",
+        "Omschrijving": "We zoeken een DevOps engineer.",
+        "Requirements": "Kubernetes, Terraform",
+        "Locatie": "Den Haag",
+        "Senioriteit": "Medior"
+      },
+      "expected_output": {
+        "should_fail_validation": true,
+        "error_message": "Omschrijving te kort"
+      }
+    },
+    {
+      "name": "Test Case 5: Medior - Dutch Tech Company",
+      "fields": {
+        "Vacaturetitel": "Full Stack Developer",
+        "Functietitel EN": "Full Stack Developer",
+        "Omschrijving": "Voor een van de snelst groeiende fintech scale-ups van Nederland zoeken we een full stack developer. Je werkt aan onze banking-as-a-service platform dat door 50+ fintechs wordt gebruikt. Je bouwt nieuwe features van A tot Z: van database design tot React components. We werken met een moderne stack (TypeScript, Node.js, React, PostgreSQL) en deployen meerdere keren per dag. Je werkt nauw samen met product managers en designers in cross-functionele teams van 5-7 mensen.",
+        "Requirements": "3+ jaar ervaring met JavaScript/TypeScript. Ervaring met React en Node.js. Kennis van SQL databases. Ervaring met RESTful APIs. Git/GitHub workflow. Scrum/Agile mindset.",
+        "Locatie": "Amsterdam (hybrid)",
+        "Senioriteit": "Medior",
+        "Salaris": "€55.000 - €70.000",
+        "USPs": "Scale-up cultuur met startup vibe, equity package, unlimited vacation days (min 25 verplicht), monthly hackathons, conference budget, latest MacBook Pro, standing desk, ergonomische stoel, free snacks & drinks."
+      },
+      "expected_output": {
+        "headline_length_max": 80,
+        "should_mention": ["fintech", "50+ fintechs", "TypeScript"],
+        "targeting_should_include": ["Full Stack Developer", "TypeScript", "React"]
+      }
+    },
+    {
+      "name": "Test Case 6: English Job Title",
+      "fields": {
+        "Vacaturetitel": "Machine Learning Engineer",
+        "Functietitel EN": "Machine Learning Engineer",
+        "Omschrijving": "We are looking for a Machine Learning Engineer to join our AI team. You will work on recommendation systems that serve 2M+ users daily. Your models directly impact user engagement and retention. We use Python, TensorFlow, PyTorch, and deploy to AWS SageMaker. You collaborate with data scientists, backend engineers, and product managers to ship ML features to production.",
+        "Requirements": "MSc in Computer Science, AI, or related field. 3+ years ML engineering experience. Strong Python skills. Experience with TensorFlow or PyTorch. Familiarity with MLOps practices. Experience with cloud platforms (AWS/GCP). English fluent (Dutch is a plus).",
+        "Locatie": "Amsterdam",
+        "Senioriteit": "Senior",
+        "Salaris": "€75.000 - €95.000 + stock options",
+        "USPs": "Work with state-of-the-art ML infrastructure, access to GPUs, conference budget (€3000/year), opportunity to publish research, work-from-anywhere policy, international team from 15+ countries."
+      },
+      "expected_output": {
+        "headline_length_max": 80,
+        "should_mention": ["2M+ users", "TensorFlow", "production"],
+        "language": "English or Dutch",
+        "tone": "technical"
+      }
+    }
+  ],
+  "metadata": {
+    "created": "2025-12-12",
+    "purpose": "Test data for n8n workflow validation",
+    "author": "Claude AI",
+    "version": "1.0.0"
+  }
+}

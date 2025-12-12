@@ -1,0 +1,818 @@
+{
+  "name": "Job Marketing - Content Generation",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX"
+            }
+          ]
+        },
+        "authentication": "airtableTokenApi",
+        "baseId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "https://airtable.com/appRhnA2VngPTd6JO/tblN1K0pCU7UPiFfs/viw0b1Q6JoyRm4uaN?blocks=hide",
+          "__regex": "https://airtable.com/([a-zA-Z0-9]{2,})"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "https://airtable.com/appRhnA2VngPTd6JO/tblN1K0pCU7UPiFfs/viw0b1Q6JoyRm4uaN?blocks=hide",
+          "mode": "url"
+        },
+        "triggerField": "Vacaturetitel",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.airtableTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "f623bec5-b3c6-4b10-90a0-c16f62836af5",
+      "name": "Airtable Trigger",
+      "retryOnFail": false,
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "azZisgcDDgVUepXK",
+          "name": "Airtable-Recruitment Vacatures"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const fields = item.json.fields;\n  const recordId = item.json.id;\n  \n  // Extract\n  const jobTitle = fields['Vacaturetitel'] || '';\n  const jobTitleEN = fields['Functietitel EN'] || jobTitle;\n  const description = fields['Omschrijving'] || '';\n  const requirements = fields['Requirements'] || '';\n  const location = fields['Locatie'] || 'Nederland';\n  const seniority = fields['Senioriteit'] || 'Medior';\n  const salary = fields['Salaris'] || 'Marktconform';\n  const usps = fields['USPs'] || '';\n  \n  // Validate\n  if (!jobTitle || !description) {\n    throw new Error('Missing required: Vacaturetitel or Omschrijving');\n  }\n  \n  results.push({\n    json: {\n      recordId,\n      jobTitle,\n      jobTitleEN,\n      description,\n      requirements,\n      location,\n      seniority,\n      salary,\n      usps\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "f631d958-cdb5-415f-ab4a-7235ca84ad71",
+      "name": "Parse Data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "=json",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2000,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Je bent recruitment marketing copywriter.\\n\\nVACATURE:\\nTitel: {{ $json.jobTitle }}\\nOmschrijving: {{ $json.description }}\\nRequirements: {{ $json.requirements }}\\nLocatie: {{ $json.location }}\\nSenioriteit: {{ $json.seniority }}\\n\\nGENEREER (output ALLEEN valid JSON, geen markdown):\\n\\n{\\n  \\\"headline_1\\\": \\\"[outcome-driven, max 80 chars]\\\",\\n  \\\"headline_2\\\": \\\"[challenge-focused, max 80 chars]\\\",\\n  \\\"headline_3\\\": \\\"[culture angle, max 80 chars]\\\",\\n  \\\"ad_copy_1\\\": \\\"[problem-solution framing, max 350 chars]\\\",\\n  \\\"ad_copy_2\\\": \\\"[opportunity-transformation, max 350 chars]\\\",\\n  \\\"targeting\\\": {\\n    \\\"linkedin_titles\\\": [\\\"title1\\\", \\\"title2\\\", \\\"title3\\\"],\\n    \\\"meta_interests\\\": [\\\"interest1\\\", \\\"interest2\\\"],\\n    \\\"geo\\\": \\\"{{ $json.location }}\\\"\\n  }\\n}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "e72e5539-0ab2-4287-9138-f9d03449b289",
+      "name": "Claude API call",
+      "credentials": {
+        "anthropicApi": {
+          "id": "kZC23F2ETYwfil57",
+          "name": "Anthropic account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst parseNode = $('Parse Data').all();\nconst results = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const response = items[i].json;\n  const inputData = parseNode[i].json;\n  \n  try {\n    let content = response.content[0].text;\n    content = content.replace(/```json\\n?/g, '').replace(/```/g, '').trim();\n    const generated = JSON.parse(content);\n    \n    results.push({\n      json: {\n        recordId: inputData.recordId,\n        status: 'Done',\n        headline1: generated.headline_1 || '',\n        headline2: generated.headline_2 || '',\n        headline3: generated.headline_3 || '',\n        adCopy1: generated.ad_copy_1 || '',\n        adCopy2: generated.ad_copy_2 || '',\n        targeting: JSON.stringify(generated.targeting, null, 2),\n        generatedAt: new Date().toISOString(),\n        errorLog: ''\n      }\n    });\n  } catch (error) {\n    results.push({\n      json: {\n        recordId: inputData.recordId,\n        status: 'Error',\n        headline1: '',\n        headline2: '',\n        headline3: '',\n        adCopy1: '',\n        adCopy2: '',\n        targeting: '',\n        generatedAt: new Date().toISOString(),\n        errorLog: error.message\n      }\n    });\n  }\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "4e9aee3b-4b02-4274-8b1b-37a3437bb488",
+      "name": "Parse Output"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRhnA2VngPTd6JO",
+          "mode": "list",
+          "cachedResultName": "Recruitment Marketing",
+          "cachedResultUrl": "https://airtable.com/appRhnA2VngPTd6JO"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblN1K0pCU7UPiFfs",
+          "mode": "list",
+          "cachedResultName": "Vacatures",
+          "cachedResultUrl": "https://airtable.com/appRhnA2VngPTd6JO/tblN1K0pCU7UPiFfs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.recordId }}",
+            "Generated At": "={{ $json.generatedAt }}",
+            "Targeting": "={{ $json.targeting }}",
+            "Status": "={{ $json.status }}",
+            "Headline 1": "={{ $json.headline1 }}",
+            "Headline 2": "={{ $json.headline2 }}",
+            "Headline 3": "={{ $json.headline3 }}",
+            "Ad Copy 2": "={{ $json.adCopy2 }}",
+            "Ad Copy 1": "={{ $json.adCopy1 }}",
+            "Error Log": "={{ $json.errorLog }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Vacaturetitel",
+              "displayName": "Vacaturetitel",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Functietitel EN",
+              "displayName": "Functietitel EN",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Omschrijving",
+              "displayName": "Omschrijving",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Requirements",
+              "displayName": "Requirements",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Locatie",
+              "displayName": "Locatie",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Senioriteit",
+              "displayName": "Senioriteit",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Junior",
+                  "value": "Junior"
+                },
+                {
+                  "name": "Medior",
+                  "value": "Medior"
+                },
+                {
+                  "name": "Senior",
+                  "value": "Senior"
+                }
+              ],
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Salaris",
+              "displayName": "Salaris",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "USPs",
+              "displayName": "USPs",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Headline 1",
+              "displayName": "Headline 1",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Headline 2",
+              "displayName": "Headline 2",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Headline 3",
+              "displayName": "Headline 3",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Ad Copy 1",
+              "displayName": "Ad Copy 1",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Ad Copy 2",
+              "displayName": "Ad Copy 2",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Targeting",
+              "displayName": "Targeting",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Generated At",
+              "displayName": "Generated At",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Error Log",
+              "displayName": "Error Log",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        832,
+        0
+      ],
+      "id": "e2c423d1-ea3f-4d65-8801-0d34d788740d",
+      "name": "Update Airtable",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "azZisgcDDgVUepXK",
+          "name": "Airtable-Recruitment Vacatures"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const fields = item.json.fields;\n  const recordId = item.json.id;\n  \n  // Extract (pas field namen aan als ze anders zijn in jouw Airtable)\n  const jobTitle = fields['Vacaturetitel'] || '';\n  const jobTitleEN = fields['Functietitel EN'] || jobTitle;\n  const description = fields['Omschrijving'] || '';\n  const requirements = fields['Requirements'] || '';\n  const location = fields['Locatie'] || 'Nederland';\n  const seniority = fields['Senioriteit'] || 'Medior';\n  const salary = fields['Salaris'] || 'Marktconform';\n  const usps = fields['USPs'] || '';\n  \n  // Validate\n  if (!jobTitle || !description) {\n    throw new Error('Missing required: Vacaturetitel or Omschrijving');\n  }\n  \n  results.push({\n    json: {\n      recordId,\n      jobTitle,\n      jobTitleEN,\n      description,\n      requirements,\n      location,\n      seniority,\n      salary,\n      usps\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "d1ee3fc5-7b8f-4785-be8a-ca7aed33e3f1",
+      "name": "Parse Data1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2000,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Je bent recruitment marketing copywriter.\\n\\nVACATURE:\\nTitel: {{ $json.jobTitle }}\\nOmschrijving: {{ $json.description }}\\nRequirements: {{ $json.requirements }}\\nLocatie: {{ $json.location }}\\nSenioriteit: {{ $json.seniority }}\\n\\nGENEREER (output ALLEEN valid JSON, geen markdown):\\n\\n{\\n  \\\"headline_1\\\": \\\"[outcome-driven, max 80 chars]\\\",\\n  \\\"headline_2\\\": \\\"[challenge-focused, max 80 chars]\\\",\\n  \\\"headline_3\\\": \\\"[culture angle, max 80 chars]\\\",\\n  \\\"ad_copy_1\\\": \\\"[problem-solution framing, max 350 chars]\\\",\\n  \\\"ad_copy_2\\\": \\\"[opportunity-transformation, max 350 chars]\\\",\\n  \\\"targeting\\\": {\\n    \\\"linkedin_titles\\\": [\\\"title1\\\", \\\"title2\\\", \\\"title3\\\"],\\n    \\\"meta_interests\\\": [\\\"interest1\\\", \\\"interest2\\\"],\\n    \\\"geo\\\": \\\"{{ $json.location }}\\\"\\n  }\\n}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1248,
+        0
+      ],
+      "id": "4ea535f4-300b-4a93-ae5e-79ae07ff094b",
+      "name": "HTTP Request",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "anthropicApi": {
+          "id": "kZC23F2ETYwfil57",
+          "name": "Anthropic account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst parseNode = $('Parse Data').all();\nconst results = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const response = items[i].json;\n  const inputData = parseNode[i].json;\n  \n  try {\n    // Extract content\n    let content = response.content[0].text;\n    content = content.replace(/```json\\n?/g, '').replace(/```/g, '').trim();\n    const generated = JSON.parse(content);\n    \n    // Cost tracking\n    const usage = response.usage || {};\n    const inputTokens = usage.input_tokens || 0;\n    const outputTokens = usage.output_tokens || 0;\n    const estimatedCost = (inputTokens * 0.000003) + (outputTokens * 0.000015);\n    \n    // Quality validation\n    const h1 = generated.headline_1 || '';\n    const h2 = generated.headline_2 || '';\n    const h3 = generated.headline_3 || '';\n    \n    const qualityIssues = [];\n    if (h1.length > 80) qualityIssues.push('H1 too long');\n    if (h2.length > 80) qualityIssues.push('H2 too long');\n    if (h3.length > 80) qualityIssues.push('H3 too long');\n    \n    const genericPhrases = ['great opportunity', 'join our team', 'we are looking'];\n    [h1, h2, h3].forEach((headline, i) => {\n      genericPhrases.forEach(phrase => {\n        if (headline.toLowerCase().includes(phrase)) {\n          qualityIssues.push(`H${i+1}: generic phrase \"${phrase}\"`);\n        }\n      });\n    });\n    \n    results.push({\n      json: {\n        recordId: inputData.recordId,\n        status: qualityIssues.length > 0 ? 'Review' : 'Done',\n        headline1: h1,\n        headline2: h2,\n        headline3: h3,\n        adCopy1: generated.ad_copy_1 || '',\n        adCopy2: generated.ad_copy_2 || '',\n        targeting: JSON.stringify(generated.targeting, null, 2),\n        generatedAt: new Date().toISOString(),\n        tokensUsed: inputTokens + outputTokens,\n        estimatedCost: `$${estimatedCost.toFixed(4)}`,\n        qualityIssues: qualityIssues.join(' | '),\n        errorLog: ''\n      }\n    });\n  } catch (error) {\n    results.push({\n      json: {\n        recordId: inputData.recordId,\n        status: 'Error',\n        headline1: '',\n        headline2: '',\n        headline3: '',\n        adCopy1: '',\n        adCopy2: '',\n        targeting: '',\n        generatedAt: new Date().toISOString(),\n        tokensUsed: 0,\n        estimatedCost: '$0.0000',\n        qualityIssues: '',\n        errorLog: error.message\n      }\n    });\n  }\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1456,
+        0
+      ],
+      "id": "466010cc-14e8-47be-a880-03b1c1407d06",
+      "name": "Parse Output1"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appRhnA2VngPTd6JO",
+          "mode": "list",
+          "cachedResultName": "Recruitment Marketing",
+          "cachedResultUrl": "https://airtable.com/appRhnA2VngPTd6JO"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblN1K0pCU7UPiFfs",
+          "mode": "list",
+          "cachedResultName": "Vacatures",
+          "cachedResultUrl": "https://airtable.com/appRhnA2VngPTd6JO/tblN1K0pCU7UPiFfs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.recordId }}",
+            "Status": "={{ $json.status }}",
+            "Headline 1": "={{ $json.headline1 }}",
+            "Headline 2": "={{ $json.headline2 }}",
+            "Headline 3": "={{ $json.headline3 }}",
+            "Ad Copy 1": "={{ $json.adCopy1 }}",
+            "Ad Copy 2": "={{ $json.adCopy2 }}",
+            "Targeting": "={{ $json.targeting }}",
+            "Generated At": "={{ $json.generatedAt }}",
+            "Error Log": "={{ $json.errorLog }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Vacaturetitel",
+              "displayName": "Vacaturetitel",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Functietitel EN",
+              "displayName": "Functietitel EN",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Omschrijving",
+              "displayName": "Omschrijving",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Requirements",
+              "displayName": "Requirements",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Locatie",
+              "displayName": "Locatie",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Senioriteit",
+              "displayName": "Senioriteit",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Junior",
+                  "value": "Junior"
+                },
+                {
+                  "name": "Medior",
+                  "value": "Medior"
+                },
+                {
+                  "name": "Senior",
+                  "value": "Senior"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Salaris",
+              "displayName": "Salaris",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "USPs",
+              "displayName": "USPs",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Headline 1",
+              "displayName": "Headline 1",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Headline 2",
+              "displayName": "Headline 2",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Headline 3",
+              "displayName": "Headline 3",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Ad Copy 1",
+              "displayName": "Ad Copy 1",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Ad Copy 2",
+              "displayName": "Ad Copy 2",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Targeting",
+              "displayName": "Targeting",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Generated At",
+              "displayName": "Generated At",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Error Log",
+              "displayName": "Error Log",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1664,
+        0
+      ],
+      "id": "397c522b-01a7-430f-89a3-2e36bf7b8933",
+      "name": "Update record",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "azZisgcDDgVUepXK",
+          "name": "Airtable-Recruitment Vacatures"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Airtable Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Data": {
+      "main": [
+        [
+          {
+            "node": "Claude API call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude API call": {
+      "main": [
+        [
+          {
+            "node": "Parse Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Output": {
+      "main": [
+        [
+          {
+            "node": "Update Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Airtable": {
+      "main": [
+        [
+          {
+            "node": "Parse Data1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Data1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Parse Output1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Output1": {
+      "main": [
+        [
+          {
+            "node": "Update record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "5ff1900d-4562-4908-8c90-c93de215a203",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3307c2ab90703d5bb823f73aa5119066b98cbabb78ba25a787091dd288fea863"
+  },
+  "id": "Q5oYbmrBhSPqVyMM",
+  "tags": []
+}
